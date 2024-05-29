@@ -9,8 +9,10 @@ use self::handlers::no_cache_header;
 use crate::{app::App, bot::BotMessage, web::admin::admin_auth, ShutdownRx};
 use aide::{
     axum::{
-        routing::{get, get_with, post, post_with},
-        ApiRouter, IntoApiResponse,
+        // routing::{get, get_with, post, post_with},
+        routing::{get, get_with, post_with},
+        ApiRouter,
+        IntoApiResponse,
     },
     openapi::OpenApi,
     redoc::Redoc,
