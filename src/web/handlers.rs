@@ -424,61 +424,6 @@ async fn search_user_logs(
     Ok(logs)
 }
 
-pub async fn search_user_logs_by_name(
-    app: State<App>,
-    Path(UserLogPathParams {
-        channel_id_type,
-        channel,
-        user,
-    }): Path<UserLogPathParams>,
-    params: Query<SearchParams>,
-) -> Result<impl IntoApiResponse> {
-    let user_id = app.get_user_id_by_name(&user).await?;
-    search_user_logs(app, channel_id_type, channel, user_id, params).await
-}
-
-pub async fn search_user_logs_by_id(
-    app: State<App>,
-    Path(UserLogPathParams {
-        channel_id_type,
-        channel,
-        user,
-    }): Path<UserLogPathParams>,
-    params: Query<SearchParams>,
-) -> Result<impl IntoApiResponse> {
-    search_user_logs(app, channel_id_type, channel, user, params).await
-}
-
-async fn search_user_logs(
-    app: State<App>,
-    channel_id_type: ChannelIdType,
-    channel: String,
-    user_id: String,
-    params: Query<SearchParams>,
-) -> Result<impl IntoApiResponse> {
-    let channel_id = match channel_id_type {
-        ChannelIdType::Name => app.get_user_id_by_name(&channel).await?,
-        ChannelIdType::Id => channel,
-    };
-
-    app.check_opted_out(&channel_id, Some(&user_id))?;
-
-    let stream = db::search_user_logs(
-        &app.db,
-        &channel_id,
-        &user_id,
-        &params.q,
-        &params.logs_params,
-    )
-    .await?;
-
-    let logs = LogsResponse {
-        stream,
-        response_type: params.logs_params.response_type(),
-    };
-    Ok(logs)
-}
-
 // pub async fn optout(app: State<App>) -> Json<String> {
 //     let mut rng = thread_rng();
 //     let optout_code: String = (0..5).map(|_| rng.sample(Alphanumeric) as char).collect();
