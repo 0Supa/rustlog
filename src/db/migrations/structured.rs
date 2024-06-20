@@ -22,7 +22,7 @@ impl<'a> Migratable<'a> for StructuredMigration<'a> {
     async fn run(&self, db: &'a clickhouse::Client) -> anyhow::Result<()> {
         db.query(
             "
-CREATE TABLE IF NOT EXISTS message_structured
+CREATE TABLE message_structured
 (
     `channel_id` LowCardinality(String) CODEC(ZSTD(8)),
     `channel_login` LowCardinality(String) CODEC(ZSTD(8)),
@@ -114,7 +114,10 @@ ORDER BY (channel_id, user_id, timestamp)
         );
 
         info!("Dropping old table");
-        db.query("DROP TABLE message").execute().await?;
+        if let Err(err) = db.query("DROP TABLE message").execute().await {
+            error!("FAILED TO DROP OLD TABLE!!!! {err}");
+            error!("Drop it manually with `DROP TABLE message` to save on space")
+        }
 
         Ok(())
     }
