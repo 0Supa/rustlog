@@ -1,4 +1,3 @@
 [submodule "web"]
 	path = web
-	url = https://github.com/boring-nick/justlog
-	branch = frontend-only-new
+	url = https://github.com/0Supa/justlog
