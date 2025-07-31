@@ -40,7 +40,8 @@ impl<'a> ResponseMessage<'a> for BasicMessage<'a> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        db::schema::{StructuredMessage, UnstructuredMessage},
+        db::
+      ::{StructuredMessage, UnstructuredMessage},
         logs::schema::message::ResponseMessage,
     };
 
