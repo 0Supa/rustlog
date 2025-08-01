@@ -257,7 +257,16 @@ impl Bot {
                 Ok(msg) => {
                     let owned_msg = msg.into_owned();
                     self.app.firehose_tx.send(owned_msg.clone()).ok();
-                    self.writer_tx.send(owned_msg).await?;
+                    if self
+                        .app
+                        .config
+                        .channels
+                        .read()
+                        .unwrap()
+                        .contains(&channel_id.to_string())
+                    {
+                        self.writer_tx.send(owned_msg).await?;
+                    }
                 }
                 Err(err) => {
                     error!("Could not convert message {unstructured:?} to be logged: {err}");
