@@ -152,9 +152,9 @@ impl Bot {
                                     break 'page;
                                 }
 
-                                live_client
-                                    .join(stream.user_login.to_string())
-                                    .expect("Failed to join live channel");
+                                if let Err(e) = live_client.join(stream.user_login.to_string()) {
+                                    error!("Failed to join live channel: {e}");
+                                }
                             }
 
                             cursor = pagination;
