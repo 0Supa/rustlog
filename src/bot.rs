@@ -144,12 +144,12 @@ impl Bot {
                 sleep(Duration::from_secs(60)).await;
 
                 let mut cursor: Option<Cursor> = None;
-                loop {
+                'page: loop {
                     match app.get_livestreams(cursor).await {
                         Ok((data, pagination)) => {
                             for stream in data {
                                 if stream.viewer_count < 2 {
-                                    break;
+                                    break 'page;
                                 }
 
                                 live_client
@@ -159,12 +159,12 @@ impl Bot {
 
                             cursor = pagination;
                             if cursor.is_none() {
-                                break;
+                                break 'page;
                             }
                         }
                         Err(err) => {
                             error!("Could not fetch livestreams: {err}");
-                            break;
+                            break 'page;
                         }
                     }
                 }
