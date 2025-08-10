@@ -8,6 +8,7 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -143,6 +144,7 @@ impl Bot {
             loop {
                 sleep(Duration::from_secs(60)).await;
 
+                let mut live_channels: HashSet<String> = HashSet::new();
                 let mut cursor: Option<Cursor> = None;
                 'page: loop {
                     match app.get_livestreams(cursor).await {
@@ -152,9 +154,14 @@ impl Bot {
                                     break 'page;
                                 }
 
-                                if let Err(e) = live_client.join(stream.user_login.to_string()) {
-                                    error!("Failed to join live channel: {e}");
+                                let login = stream.user_login.to_string();
+
+                                if let Err(e) = live_client.join(login.clone()) {
+                                    warn!("Failed to join live channel: {e}");
+                                    continue;
                                 }
+
+                                live_channels.insert(login);
                             }
 
                             cursor = pagination;
@@ -168,6 +175,16 @@ impl Bot {
                         }
                     }
                 }
+
+                let _ = live_client.set_wanted_channels(
+                    app.config
+                        .channels
+                        .read()
+                        .unwrap()
+                        .union(&live_channels)
+                        .cloned()
+                        .collect(),
+                );
             }
         });
 
