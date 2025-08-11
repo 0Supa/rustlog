@@ -141,6 +141,8 @@ impl Bot {
         let app = self.app.clone();
         let live_client = client.clone();
         tokio::spawn(async move {
+            let mut last_live_channels: HashSet<String> = HashSet::new();
+
             loop {
                 sleep(Duration::from_secs(60)).await;
 
@@ -176,15 +178,14 @@ impl Bot {
                     }
                 }
 
-                let _ = live_client.set_wanted_channels(
-                    app.config
-                        .channels
-                        .read()
-                        .unwrap()
-                        .union(&live_channels)
-                        .cloned()
-                        .collect(),
-                );
+                let persistent_channels = app.config.channels.read().unwrap();
+                for channel in last_live_channels.difference(&live_channels).cloned() {
+                    if !persistent_channels.contains(&channel) {
+                        live_client.part(channel);
+                    }
+                }
+
+                last_live_channels = live_channels;
             }
         });
 
