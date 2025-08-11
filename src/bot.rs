@@ -141,7 +141,7 @@ impl Bot {
         let app = self.app.clone();
         let live_client = client.clone();
         tokio::spawn(async move {
-            let mut last_live_channels: HashSet<String> = HashSet::new();
+            let mut old_live_channels: HashSet<String> = HashSet::new();
 
             loop {
                 sleep(Duration::from_secs(60)).await;
@@ -151,12 +151,18 @@ impl Bot {
                 'page: loop {
                     match app.get_livestreams(cursor).await {
                         Ok((data, pagination)) => {
+                            let config_channels = app.config.channels.read().unwrap();
+
                             for stream in data {
                                 if stream.viewer_count < 2 {
                                     break 'page;
                                 }
 
                                 let login = stream.user_login.to_string();
+
+                                if config_channels.contains(stream.user_id.as_str()) {
+                                    continue;
+                                }
 
                                 if let Err(e) = live_client.join(login.clone()) {
                                     warn!("Failed to join live channel: {e}");
@@ -178,14 +184,11 @@ impl Bot {
                     }
                 }
 
-                let persistent_channels = app.config.channels.read().unwrap();
-                for channel in last_live_channels.difference(&live_channels).cloned() {
-                    if !persistent_channels.contains(&channel) {
-                        live_client.part(channel);
-                    }
+                for channel in old_live_channels.difference(&live_channels).cloned() {
+                    live_client.part(channel);
                 }
 
-                last_live_channels = live_channels;
+                old_live_channels = live_channels;
             }
         });
 
