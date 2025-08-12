@@ -140,8 +140,7 @@ impl Bot {
         // Auto joiner
         let app = self.app.clone();
         let live_client = client.clone();
-        let mut join_counter = 0;
-        let mut old_live_channels: HashSet<String> = HashSet::new();
+        let mut joined_channels: HashSet<String> = HashSet::new();
         tokio::spawn(async move {
             loop {
                 sleep(Duration::from_secs(60)).await;
@@ -170,7 +169,6 @@ impl Bot {
                                 }
 
                                 live_channels.insert(login);
-                                join_counter += 1;
                             }
 
                             cursor = pagination;
@@ -185,16 +183,21 @@ impl Bot {
                     }
                 }
 
-                if join_counter > 150_000 {
+                if joined_channels.len() > 150_000 {
                     sleep(Duration::from_secs(60)).await;
 
-                    for channel in old_live_channels.difference(&live_channels).cloned() {
+                    let old_channels: Vec<_> = joined_channels
+                        .difference(&live_channels)
+                        .cloned()
+                        .collect();
+
+                    for channel in old_channels {
+                        joined_channels.remove(&channel);
                         live_client.part(channel);
-                        join_counter -= 1;
                     }
                 }
 
-                old_live_channels = live_channels;
+                joined_channels.extend(live_channels);
             }
         });
 
