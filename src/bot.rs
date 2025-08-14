@@ -203,9 +203,11 @@ impl Bot {
             loop {
                 sleep(Duration::from_secs(10)).await;
 
-                let old_channels: Vec<_> = parting_queue.lock().unwrap().drain().take(20).collect();
+                let mut queue = parting_queue.lock().unwrap();
+                let old_channels: Vec<_> = queue.iter().take(20).cloned().collect();
 
                 for channel in old_channels {
+                    queue.remove(&channel);
                     part_client.part(channel);
                 }
             }
