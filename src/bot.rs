@@ -77,7 +77,7 @@ impl Bot {
             time_per_message: Duration::from_millis(150),
 
             connection_rate_limiter: Arc::new(Semaphore::new(1)),
-            new_connection_every: Duration::from_secs(2),
+            new_connection_every: Duration::from_secs(6),
             connect_timeout: Duration::from_secs(20),
 
             metrics_config: MetricsConfig::default(),
