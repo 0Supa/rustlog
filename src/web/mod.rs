@@ -9,7 +9,7 @@ use self::handlers::no_cache_header;
 use crate::{app::App, bot::BotMessage, web::admin::admin_auth, ShutdownRx};
 use aide::{
     axum::{
-        routing::{get, get_with, post, post_with},
+        routing::{get, get_with, post_with},
         ApiRouter, IntoApiResponse,
     },
     openapi::OpenApi,
@@ -36,13 +36,7 @@ use tower_http::{
 };
 use tracing::{debug, info};
 
-const CAPABILITIES: &[&str] = &[
-    "arbitrary-range-query",
-    "search",
-    "stats",
-    "namehistory",
-    "firehose",
-];
+const CAPABILITIES: &[&str] = &["firehose"];
 
 pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessage>) {
     aide::generate::on_error(|error| {
@@ -83,74 +77,6 @@ pub async fn run(app: App, mut shutdown_rx: ShutdownRx, bot_tx: Sender<BotMessag
                 op.description("List logged channels")
             }),
         )
-        .api_route(
-            "/list",
-            get_with(handlers::list_available_logs, |op| {
-                op.description("List available logs")
-            }),
-        )
-        // Paths with static parts should go first so they aren't overridden by the dynamic date paths later
-        .api_route(
-            "/namehistory/{user_id}",
-            get_with(handlers::get_user_name_history, |op| {
-                op.description("Get user name history by provided user id")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{user_id_type}/{user}/search",
-            get_with(handlers::search_user_logs, |op| {
-                op.description("Search user logs using the provided query")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{user_id_type}/{user}/stats",
-            get_with(handlers::get_user_stats, |op| {
-                op.description("Get user stats")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/stats",
-            get_with(handlers::get_channel_stats, |op| {
-                op.description("Get channel stats")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/random",
-            get_with(handlers::random_channel_line, |op| {
-                op.description("Get a random line from the channel's logs")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{user_id_type}/{user}/random",
-            get_with(handlers::random_user_line, |op| {
-                op.description("Get a random line from the user's logs in a channel")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}",
-            get_with(handlers::get_channel_logs, |op| {
-                op.description("Get channel logs. If the `to` and `from` query params are not given, redirect to latest available day")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{user_id_type}/{user}",
-            get_with(handlers::get_user_logs, |op| {
-                op.description("Get user logs by name. If the `to` and `from` query params are not given, redirect to latest available month")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{year}/{month}/{day}",
-            get_with(handlers::get_channel_logs_by_date, |op| {
-                op.description("Get channel logs from the given day")
-            }),
-        )
-        .api_route(
-            "/{channel_id_type}/{channel}/{user_id_type}/{user}/{year}/{month}",
-            get_with(handlers::get_user_logs_by_date, |op| {
-                op.description("Get user logs in a channel from the given month")
-            }),
-        )
-        .api_route("/optout", post(handlers::optout))
         .api_route("/capabilities", get(capabilities))
         .route("/firehose", any(handlers::firehose))
         .route("/docs", Scalar::new("/openapi.json").axum_route())

@@ -3,15 +3,14 @@ pub mod cache;
 use self::cache::UsersCache;
 use crate::{
     config::Config,
-    db::{delete_user_logs, schema::StructuredMessage, writer::FlushBuffer},
+    db::schema::StructuredMessage,
     error::Error,
     Result,
 };
-use anyhow::Context;
 use dashmap::DashSet;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use tokio::sync::broadcast::Sender;
-use tracing::{debug, info};
+use tracing::debug;
 use twitch_api::{
     helix::{streams::GetStreamsRequest, users::GetUsersRequest, Cursor},
     twitch_oauth2::AppAccessToken,
@@ -24,9 +23,7 @@ pub struct App {
     pub token: Arc<AppAccessToken>,
     pub users: UsersCache,
     pub optout_codes: Arc<DashSet<String>>,
-    pub db: Arc<clickhouse::Client>,
     pub config: Arc<Config>,
-    pub flush_buffer: FlushBuffer,
     pub firehose_tx: Sender<StructuredMessage<'static>>,
 }
 
@@ -141,18 +138,6 @@ impl App {
 
         let response = self.helix_client.req_get(request, &*self.token).await?;
         Ok((response.data, response.pagination))
-    }
-
-    pub async fn optout_user(&self, user_id: &str) -> anyhow::Result<()> {
-        delete_user_logs(&self.db, user_id)
-            .await
-            .context("Could not delete logs")?;
-
-        self.config.opt_out.insert(user_id.to_owned(), true);
-        self.config.save()?;
-        info!("User {user_id} opted out");
-
-        Ok(())
     }
 
     pub fn check_opted_out(&self, channel_id: &str, user_id: Option<&str>) -> Result<()> {

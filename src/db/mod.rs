@@ -3,7 +3,6 @@ pub mod schema;
 pub mod writer;
 use std::collections::HashSet;
 
-pub use migrations::run as setup_db;
 use serde::Deserialize;
 use writer::FlushBuffer;
 

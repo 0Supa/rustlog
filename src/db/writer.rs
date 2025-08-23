@@ -1,19 +1,15 @@
 use super::schema::StructuredMessage;
-use crate::{db::schema::MESSAGES_STRUCTURED_TABLE, ShutdownRx};
+use crate::db::schema::MESSAGES_STRUCTURED_TABLE;
 use anyhow::{anyhow, Context};
 use clickhouse::Client;
 use lazy_static::lazy_static;
 use prometheus::{register_int_gauge, IntGauge};
 use std::{ops::Range, sync::Arc, time::Duration};
 use tokio::{
-    sync::{
-        mpsc::{channel, Sender},
-        RwLock,
-    },
-    task::JoinHandle,
+    sync::RwLock,
     time::{sleep, Instant},
 };
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, trace};
 
 const RETRY_COUNT: usize = 20;
 const RETRY_INTERVAL_SECONDS: u64 = 5;
@@ -68,51 +64,6 @@ impl FlushBuffer {
         trace!("Read {} messages from flush buffer", msgs.len());
         msgs
     }
-}
-
-pub async fn create_writer(
-    db: Client,
-    mut shutdown_rx: ShutdownRx,
-    flush_interval: u64,
-) -> anyhow::Result<(
-    Sender<StructuredMessage<'static>>,
-    FlushBuffer,
-    JoinHandle<()>,
-)> {
-    let (tx, mut rx) = channel(1000);
-
-    let flush_buffer = FlushBuffer::default();
-    let flush_buffer_clone = flush_buffer.clone();
-
-    let handle = tokio::spawn(async move {
-        let timeout = tokio::time::sleep(Duration::from_secs(flush_interval));
-        tokio::pin!(timeout);
-
-        loop {
-            tokio::select! {
-                _ = &mut timeout => {
-                    timeout.as_mut().reset(Instant::now() + Duration::from_secs(flush_interval));
-                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer).await {
-                        error!("Could not write messages: {err}");
-                    }
-                }
-                Some(msg) = rx.recv() => {
-                    flush_buffer.messages.write().await.push(msg);
-                }
-                Ok(()) = shutdown_rx.changed() => {
-                    info!("Flushing database write buffer");
-
-                    if let Err(err) = write_chunk_with_retry(&db, &flush_buffer).await {
-                        error!("Could not flush messages: {err}");
-                    }
-
-                    break;
-                }
-            }
-        }
-    });
-
-    Ok((tx, flush_buffer_clone, handle))
 }
 
 async fn write_chunk_with_retry(db: &Client, buffer: &FlushBuffer) -> anyhow::Result<()> {

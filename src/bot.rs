@@ -4,14 +4,14 @@ use crate::{
     logs::extract::{extract_channel_and_user_from_raw, extract_raw_timestamp},
     ShutdownRx,
 };
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use std::collections::HashSet;
 use std::time::Duration;
 use tokio::{
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::Receiver,
     time::sleep,
 };
 use tracing::{debug, error, info, log::warn, trace};
@@ -47,23 +47,21 @@ const COMMAND_PREFIX: &str = "!rustlog ";
 pub async fn run<C: LoginCredentials>(
     login_credentials: C,
     app: App,
-    writer_tx: Sender<StructuredMessage<'static>>,
     shutdown_rx: ShutdownRx,
     command_rx: Receiver<BotMessage>,
 ) {
-    let bot = Bot::new(app, writer_tx);
+    let bot = Bot::new(app);
     bot.run(login_credentials, shutdown_rx, command_rx).await;
 }
 
 #[derive(Clone)]
 struct Bot {
     app: App,
-    writer_tx: Sender<StructuredMessage<'static>>,
 }
 
 impl Bot {
-    pub fn new(app: App, writer_tx: Sender<StructuredMessage<'static>>) -> Bot {
-        Self { app, writer_tx }
+    pub fn new(app: App) -> Bot {
+        Self { app }
     }
 
     pub async fn run<C: LoginCredentials>(
@@ -287,7 +285,6 @@ impl Bot {
                 Ok(msg) => {
                     let owned_msg = msg.into_owned();
                     self.app.firehose_tx.send(owned_msg.clone()).ok();
-                    self.writer_tx.send(owned_msg).await?;
                 }
                 Err(err) => {
                     error!("Could not convert message {unstructured:?} to be logged: {err}");
@@ -321,36 +318,11 @@ impl Bot {
                     self.update_channels(client, &args, ChannelAction::Part)
                         .await?
                 }
-                "optout" => {
-                    self.optout_user(&args, sender_login, sender_id).await?;
-                }
                 _ => (),
             }
         }
 
         Ok(())
-    }
-
-    async fn optout_user(
-        &self,
-        args: &[&str],
-        sender_login: &str,
-        sender_id: &str,
-    ) -> anyhow::Result<()> {
-        let arg = args.first().context("No optout code provided")?;
-        if self.app.optout_codes.remove(*arg).is_some() {
-            self.app.optout_user(sender_id).await?;
-
-            Ok(())
-        } else if self.check_admin(sender_login).is_ok() {
-            let user_id = self.app.get_user_id_by_name(arg).await?;
-
-            self.app.optout_user(&user_id).await?;
-
-            Ok(())
-        } else {
-            Err(anyhow!("Invalid optout code"))
-        }
     }
 
     async fn update_channels<C: LoginCredentials>(

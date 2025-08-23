@@ -11,12 +11,10 @@ mod web;
 pub type Result<T> = std::result::Result<T, error::Error>;
 pub type ShutdownRx = watch::Receiver<()>;
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use app::App;
-use args::{Args, Command};
 use clap::Parser;
 use config::Config;
-use db::{setup_db, writer::create_writer};
 use futures::{future::try_join_all, stream::FuturesUnordered, StreamExt};
 use migrator::Migrator;
 use mimalloc::MiMalloc;
@@ -59,47 +57,15 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::load()?;
-    let mut db = clickhouse::Client::default()
-        .with_url(&config.clickhouse_url)
-        .with_database(&config.clickhouse_db)
-        .with_compression(clickhouse::Compression::None);
 
-    if let Some(user) = &config.clickhouse_username {
-        db = db.with_user(user);
-    }
-
-    if let Some(password) = &config.clickhouse_password {
-        db = db.with_password(password);
-    }
-
-    let args = Args::parse();
-
-    setup_db(&db, &config.clickhouse_db)
-        .await
-        .context("Could not run DB migrations")?;
-
-    match args.subcommand {
-        None => run(config, db).await,
-        Some(Command::Migrate {
-            source_dir,
-            channel_id,
-            jobs,
-        }) => migrate(db, source_dir, channel_id, jobs).await,
-    }
+    run(config).await
 }
 
-async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
+async fn run(config: Config) -> anyhow::Result<()> {
     let mut shutdown_rx = listen_shutdown().await;
 
     let helix_client: HelixClient<reqwest::Client> = HelixClient::default();
     let token = generate_token(&config).await?;
-
-    let (writer_tx, flush_buffer, mut writer_handle) = create_writer(
-        db.clone(),
-        shutdown_rx.clone(),
-        config.clickhouse_flush_interval,
-    )
-    .await?;
 
     let (firehose_tx, _) = broadcast::channel(100);
 
@@ -108,9 +74,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         token: Arc::new(token),
         users: UsersCache::default(),
         config: Arc::new(config),
-        db: Arc::new(db),
         optout_codes: Arc::default(),
-        flush_buffer,
         firehose_tx: firehose_tx.clone(),
     };
 
@@ -120,7 +84,6 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
     let mut bot_handle = tokio::spawn(bot::run(
         login_credentials,
         app.clone(),
-        writer_tx,
         shutdown_rx.clone(),
         bot_rx,
     ));
@@ -132,7 +95,7 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
 
             let started_at = Instant::now();
 
-            let shutdown_future = try_join_all([bot_handle, web_handle, writer_handle]);
+            let shutdown_future = try_join_all([bot_handle, web_handle]);
             match timeout(Duration::from_secs(SHUTDOWN_TIMEOUT_SECONDS), shutdown_future).await {
                 Ok(Ok(_)) => {
                     debug!("Cleanup finished in {}ms", started_at.elapsed().as_millis());
@@ -150,9 +113,6 @@ async fn run(config: Config, db: clickhouse::Client) -> anyhow::Result<()> {
         }
         _ = &mut web_handle => {
             Err(anyhow!("Web task exited unexpectedly"))
-        }
-        _ = &mut writer_handle => {
-            Err(anyhow!("Writer task exited unexpectedly"))
         }
     }
 }
