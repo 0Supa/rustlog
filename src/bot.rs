@@ -201,9 +201,13 @@ impl Bot {
         let part_client = client.clone();
         tokio::spawn(async move {
             loop {
-                sleep(Duration::from_secs(600)).await;
+                sleep(Duration::from_secs(10)).await;
 
-                for channel in parting_queue.lock().unwrap().drain() {
+                let mut queue = parting_queue.lock().unwrap();
+                let old_channels: Vec<_> = queue.iter().take(20).cloned().collect();
+
+                for channel in old_channels {
+                    queue.remove(&channel);
                     part_client.part(channel);
                 }
             }
