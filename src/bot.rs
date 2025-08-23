@@ -8,12 +8,14 @@ use anyhow::{anyhow, Context};
 use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
     time::sleep,
 };
 use tracing::{debug, error, info, log::warn, trace};
+use twitch_api::helix::Cursor;
 use twitch_irc::{
     login::LoginCredentials,
     message::{AsRawIRC, IRCMessage, ServerMessage},
@@ -135,6 +137,70 @@ impl Bot {
             }
         });
 
+        // Auto joiner
+        let app = self.app.clone();
+        let live_client = client.clone();
+        let mut joined_channels: HashSet<String> = HashSet::new();
+        tokio::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(60)).await;
+
+                let mut live_channels: HashSet<String> = HashSet::new();
+                let mut cursor: Option<Cursor> = None;
+                'page: loop {
+                    match app.get_livestreams(cursor).await {
+                        Ok((data, pagination)) => {
+                            let config_channels = app.config.channels.read().unwrap();
+
+                            for stream in data {
+                                if stream.viewer_count < 2 {
+                                    break 'page;
+                                }
+
+                                let login = stream.user_login.to_string();
+
+                                if config_channels.contains(stream.user_id.as_str()) {
+                                    continue;
+                                }
+
+                                if let Err(e) = live_client.join(login.clone()) {
+                                    warn!("Failed to join live channel: {e}");
+                                    continue;
+                                }
+
+                                live_channels.insert(login);
+                            }
+
+                            cursor = pagination;
+                            if cursor.is_none() {
+                                break 'page;
+                            }
+                        }
+                        Err(err) => {
+                            error!("Could not fetch livestreams: {err}");
+                            break 'page;
+                        }
+                    }
+                }
+
+                if joined_channels.len() > 150_000 {
+                    sleep(Duration::from_secs(60)).await;
+
+                    let old_channels: Vec<_> = joined_channels
+                        .difference(&live_channels)
+                        .cloned()
+                        .collect();
+
+                    for channel in old_channels {
+                        joined_channels.remove(&channel);
+                        live_client.part(channel);
+                    }
+                }
+
+                joined_channels.extend(live_channels);
+            }
+        });
+
         loop {
             tokio::select! {
                 Some(msg) = receiver.recv() => {
@@ -195,11 +261,11 @@ impl Bot {
         let irc_message = IRCMessage::from(msg);
 
         if let Some((channel_id, maybe_user_id)) = extract_channel_and_user_from_raw(&irc_message) {
-            if !channel_id.is_empty() {
-                MESSAGES_RECEIVED_COUNTERS
-                    .with_label_values(&[channel_id])
-                    .inc();
-            }
+            // if !channel_id.is_empty() {
+            //     MESSAGES_RECEIVED_COUNTERS
+            //         .with_label_values(&[channel_id])
+            //         .inc();
+            // }
 
             let timestamp = extract_raw_timestamp(&irc_message)
                 .unwrap_or_else(|| Utc::now().timestamp_millis().try_into().unwrap());
