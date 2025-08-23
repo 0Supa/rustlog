@@ -9,7 +9,6 @@ use chrono::Utc;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, IntCounterVec};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
@@ -138,18 +137,15 @@ impl Bot {
             }
         });
 
-        let part_queue = Arc::new(Mutex::new(HashSet::new()));
-
         // Auto joiner
         let app = self.app.clone();
         let live_client = client.clone();
-        let joiner_queue = Arc::clone(&part_queue);
-        let mut old_live_channels = HashSet::new();
+        let mut joined_channels: HashSet<String> = HashSet::new();
         tokio::spawn(async move {
             loop {
                 sleep(Duration::from_secs(60)).await;
 
-                let mut live_channels = HashSet::new();
+                let mut live_channels: HashSet<String> = HashSet::new();
                 let mut cursor: Option<Cursor> = None;
                 'page: loop {
                     match app.get_livestreams(cursor).await {
@@ -172,7 +168,6 @@ impl Bot {
                                     continue;
                                 }
 
-                                joiner_queue.lock().unwrap().remove(&login);
                                 live_channels.insert(login);
                             }
 
@@ -188,26 +183,21 @@ impl Bot {
                     }
                 }
 
-                joiner_queue
-                    .lock()
-                    .unwrap()
-                    .extend(old_live_channels.difference(&live_channels).cloned());
+                if joined_channels.len() > 150_000 {
+                    sleep(Duration::from_secs(60)).await;
 
-                old_live_channels = live_channels;
-            }
-        });
+                    let old_channels: Vec<_> = joined_channels
+                        .difference(&live_channels)
+                        .cloned()
+                        .collect();
 
-        let parting_queue = Arc::clone(&part_queue);
-        let part_client = client.clone();
-        tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_secs(10)).await;
-
-                let old_channels: Vec<_> = parting_queue.lock().unwrap().drain().take(20).collect();
-
-                for channel in old_channels {
-                    part_client.part(channel);
+                    for channel in old_channels {
+                        joined_channels.remove(&channel);
+                        live_client.part(channel);
+                    }
                 }
+
+                joined_channels.extend(live_channels);
             }
         });
 
